@@ -1,18 +1,27 @@
 from flask import Flask, request, render_template
 import os
+import ocr
 
-UPLOAD_FOLDER = "./uploads/"
-ALLOWED_EXTENSIONS = ["jpg","jpeg"]
+UPLOAD_FOLDER = "static/"
+ALLOWED_EXTENSIONS = ["jpg","jpeg","png"]
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 
 @app.route('/',methods=['GET','POST'])
 def main():
-    # print request.method
+    '''
+    Main server entrypoint
+    This function will be executed for GET or POST request at localhost
+    If it is a post request, ie form is submitted, then the form will be
+    checked for files. If there is a file, it is saved with a name that
+    is generated to serially save the uploaded images in uploads directory
+    after checking for its extension.
+    :return: Returns the rendered page depending on the situations.
+    '''
     if request.method == "POST":
-        print request.method
-        print request.files
+        # print request.method
+        # print request.files
         if 'file' not in request.files:
             return render_template('index.html',error="File not in request")
         file = request.files['file']
@@ -29,5 +38,8 @@ def main():
                 filename = "1."+file_extension
 
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            result = ocr.do_ocr(os.path.join(app.config['UPLOAD_FOLDER'], filename),console=False)
+            return render_template('results.html', result=result)
+
 
     return render_template('index.html')

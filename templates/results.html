@@ -2,9 +2,65 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Title</title>
+    <title>Results</title>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+    <style>
+        canvas{
+            border: 1px solid black;
+        }
+    </style>
 </head>
 <body>
+{% if result %}
+    <strong>Result:</strong> <span id="label"></span><br>
+    <!--<img id="image" src="" alt="Image">-->
+<canvas id="myCanvas" width="{{ result.image_size[1] }}" height="{{ result.image_size[0] }}" style="background-image: url('{{ result.image_path }}')">
 
+Your browser does not support the HTML5 canvas tag.</canvas>
+    <br><hr><br><br>
+    <strong>Metadata</strong><br>
+    <strong>Time taken: </strong>{{ result.time_taken }}<br>
+    <strong>Image path: </strong>{{ result.image_path }}<br>
+    <strong>Image size: </strong>{{ result.image_size }}<br>
+
+  <script>
+
+window.onload = function() {
+    var canvas = document.querySelector("canvas"),
+        ctx = canvas.getContext("2d"),
+        rects = [
+            {% for box in result.boxes %}
+                {x: {{ box['box'][0] }}, y: {{ box['box'][1] }}, w: {{ box['box'][2] }}, h: {{ box['box'][3] }}, text:"{{ box['text'] }}"},
+            {% endfor %}
+        ],
+        i=0;
+
+
+canvas.onmousemove = function(e) {
+
+  // important: correct mouse position:
+  var rect = this.getBoundingClientRect(),
+      x = e.clientX - rect.left,
+      y = e.clientY - rect.top,
+      i = 0, r;
+
+  while(r = rects[i++]) {
+
+    ctx.beginPath();
+    ctx.lineWidth="4";
+    ctx.strokeStyle="green";
+    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.stroke();
+    console.log(x,y);
+    if (ctx.isPointInPath(x, y)){
+        $("#label").text(r.text);
+    }
+  }
+
+};
+
+}
+</script>
+{% endif %}
 </body>
 </html>
