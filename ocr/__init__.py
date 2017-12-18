@@ -2,6 +2,7 @@ import cv2
 import time
 import pytesseract
 from PIL import Image
+import unicodedata
 
 
 def image_show(image_object,image_name="Image"):
@@ -33,7 +34,6 @@ def intersection(rect1,rect2):
 
 
 def get_character_bounding_boxes(image_path,console=False):
-    mser = cv2.MSER_create(_min_area=10,_max_area=1000)
 
     # Your image path i-e receipt path
     img = cv2.imread(image_path)
@@ -50,6 +50,9 @@ def get_character_bounding_boxes(image_path,console=False):
 
 
     # detect regions in gray scale image
+    start_time=time.time()
+    mser = cv2.MSER_create(_min_area=10,_max_area=1000)
+
     regions, np_boxes = mser.detectRegions(img_bw)
     boxes = []
     for np_box in np_boxes:
@@ -133,10 +136,72 @@ def get_character_bounding_boxes(image_path,console=False):
                 boxes[small]=[0, 0,0,0]
 
     # print boxes
-    print "Time taken:",time.time()-start_time
+    print "Time taken to get bounding boxes with get_character_bounding_boxes:", time.time() - start_time
+
     if console:
         draw_boxes(img.copy(), boxes)
     return boxes
+
+
+def get_boxes_faster(image_path,console=False):
+    # print image_path
+    image_object = cv2.imread(image_path)
+    # image_show(image_object=image_object)
+    image_object_gray = cv2.cvtColor(image_object, cv2.COLOR_BGR2GRAY)
+
+    image_object_bw = cv2.adaptiveThreshold(image_object_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+                                            115, 1)
+    start_time = time.time()
+    mser = cv2.MSER_create(_min_area=10, _max_area=1000)
+
+    regions, np_boxes = mser.detectRegions(image_object_bw)
+    boxes = []
+    for np_box in np_boxes:
+        boxes.append(list(np_box))
+
+    boxes.sort(key=lambda x: x[1])
+
+    boxes_bins = []
+    boxes_bin = []
+    dy = 50
+    y_val = boxes[0][1]
+    y2_val = boxes[0][1]+boxes[0][3]
+
+    for i, box in enumerate(boxes):
+        if box[1] <= y_val + dy or box[1]+box[3] <= y2_val + dy:
+            boxes_bin.append(box)
+        else:
+            boxes_bins.append(boxes_bin)
+            boxes_bin = [box]
+            y_val = box[1]
+
+
+    new_boxes = []
+    for boxes_bin in boxes_bins:
+        min_x = 100000000
+        min_y = 100000000
+        max_x = 0
+        max_y = 0
+        for box in boxes_bin:
+            [x, y, w, h] = box
+            if x < min_x:
+                min_x = x
+            if y < min_y:
+                min_y = y
+            if x + w > max_x:
+                max_x = x + w
+            if y + h > max_y:
+                max_y = y + h
+        new_boxes.append([min_x, min_y, (max_x - min_x), (max_y - min_y)])
+
+    print "Number of boxes:",len(new_boxes)
+
+    print "Time taken to get bounding boxes with get_boxes_faster:", time.time() - start_time
+    if console:
+        draw_boxes(image_object.copy(), boxes)
+        draw_boxes(image_object.copy(), new_boxes)
+
+    return new_boxes
 
 
 def get_text_from_bounding_boxes(image_path, boxes, console=False):
@@ -151,7 +216,7 @@ def get_text_from_bounding_boxes(image_path, boxes, console=False):
             cropped_image = image_obj__bw[y: y + h, x: x + w]
             # print type(cropped_image)
             recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng")
-            recognised_text = recognised_text.replace("\n","")
+            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
             box_data = {"box":box,"text":recognised_text}
             result["boxes"].append(box_data)
             if console:
@@ -162,8 +227,10 @@ def get_text_from_bounding_boxes(image_path, boxes, console=False):
 
 def do_ocr(image_path,console):
     start_time=time.time()
-    boxes = get_character_bounding_boxes(image_path,console)
+    # boxes = get_character_bounding_boxes(image_path,console)
+    boxes = get_boxes_faster(image_path,console)
     result = get_text_from_bounding_boxes(image_path,boxes,console)
+
     result["time_taken"] = str(time.time()-start_time)
     return result
 

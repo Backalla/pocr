@@ -1,3 +1,4 @@
 static
 .idea
 *.pyc
+tests/question_papers

@@ -25,6 +25,7 @@ Your browser does not support the HTML5 canvas tag.</canvas>
 
   <script>
 
+
 window.onload = function() {
     var canvas = document.querySelector("canvas"),
         ctx = canvas.getContext("2d"),
@@ -48,12 +49,24 @@ canvas.onmousemove = function(e) {
 
     ctx.beginPath();
     ctx.lineWidth="4";
-    ctx.strokeStyle="green";
+    if (r.text === ""){
+        ctx.strokeStyle="red";
+    }
+    else{
+        ctx.strokeStyle="green";
+    }
     ctx.rect(r.x, r.y, r.w, r.h);
     ctx.stroke();
     console.log(x,y);
     if (ctx.isPointInPath(x, y)){
-        $("#label").text(r.text);
+        console.log(r.text);
+        if (r.text === ""){
+            $("#label").text("Could not be recognised.. :(");
+        }
+        else{
+            $("#label").text(r.text);
+        }
+
     }
   }
 
