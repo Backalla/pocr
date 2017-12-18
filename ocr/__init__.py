@@ -3,6 +3,8 @@ import time
 import pytesseract
 from PIL import Image
 import unicodedata
+import multiprocessing as mp
+
 
 
 def image_show(image_object,image_name="Image"):
@@ -208,12 +210,12 @@ def get_text_from_bounding_boxes(image_path, boxes, console=False):
     image_obj = cv2.imread(image_path)
     image_obj_gray = cv2.cvtColor(image_obj, cv2.COLOR_BGR2GRAY)
 
-    image_obj__bw = cv2.adaptiveThreshold(image_obj_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 115, 1)
+    image_obj_bw = cv2.adaptiveThreshold(image_obj_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 115, 1)
     result = {"image_path":image_path,"boxes":[]}
     for box in boxes:
         if box!=[0,0,0,0]:
             x,y,w,h = box
-            cropped_image = image_obj__bw[y: y + h, x: x + w]
+            cropped_image = image_obj_bw[y: y + h, x: x + w]
             # print type(cropped_image)
             recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng")
             recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
@@ -225,11 +227,53 @@ def get_text_from_bounding_boxes(image_path, boxes, console=False):
     return result
 
 
+def extract_text_process(Image_obj,box_texts,boxes):
+    # print "{} boxes to process".format(len(boxes))
+    for box in boxes:
+        if box!=[0,0,0,0]:
+            x,y,w,h = box
+            cropped_image = Image_obj[y: y + h, x: x + w]
+            # print type(cropped_image)
+            recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng")
+            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
+            box_data = {"box":box,"text":recognised_text}
+            box_texts.put(box_data)
+
+
+def get_text_from_bounding_boxes_mp(image_path,boxes,console):
+    box_texts = mp.Queue()
+    image_obj = cv2.imread(image_path)
+    image_obj_gray = cv2.cvtColor(image_obj, cv2.COLOR_BGR2GRAY)
+
+    image_obj_bw = cv2.adaptiveThreshold(image_obj_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 115, 1)
+    num_cores = mp.cpu_count()
+    print "Using {} cores".format(num_cores)
+    new_boxes=[[] for core in range(num_cores)]
+    for i,box in enumerate(boxes):
+        new_boxes[i%num_cores].append(box)
+
+    processes = [mp.Process(target=extract_text_process, args=(image_obj_bw,box_texts,boxes_chunk)) for boxes_chunk in new_boxes]
+    for p in processes:
+        p.start()
+
+    for p in processes:
+        p.join()
+
+    recognised_boxes=[]
+    while not box_texts.empty():
+        recognised_boxes.append(box_texts.get())
+
+    # print "Recognised boxes:",len(recognised_boxes)
+    result = {"image_path":image_path,"boxes":recognised_boxes,"image_size":(image_obj.shape[0],image_obj.shape[1])}
+
+    return result
+
+
 def do_ocr(image_path,console):
     start_time=time.time()
     # boxes = get_character_bounding_boxes(image_path,console)
     boxes = get_boxes_faster(image_path,console)
-    result = get_text_from_bounding_boxes(image_path,boxes,console)
+    result = get_text_from_bounding_boxes_mp(image_path,boxes,console)
 
     result["time_taken"] = str(time.time()-start_time)
     return result
