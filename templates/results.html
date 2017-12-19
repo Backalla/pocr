@@ -15,10 +15,11 @@
     {% if result %}
        <nav class="navbar fixed-top navbar-light bg-light">
        <a class="navbar-brand">Result: <span class="navbar-text" id="label"> </span></a>
-
+       <input type="button" value="Reset" class="btn btn-outline-success my-2 my-sm-0" onClick="window.location.href=window.location.href">
 
 </nav>
         <div class="container-fluid">
+        <br><br><br>
 <canvas id="myCanvas" width="{{ result.image_size[1] }}" height="{{ result.image_size[0] }}" style="background-image: url('{{ result.image_path }}')">
 
 Your browser does not support the HTML5 canvas tag.</canvas>
