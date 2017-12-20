@@ -262,7 +262,7 @@ def extract_text_process(Image_obj,box_texts,boxes):
                                                borderType=cv2.BORDER_CONSTANT, value=[0, 0, 0])
             # print type(cropped_image)
             recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image), lang="eng", config="-psm 6")
-            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n", "\\n").replace("'","\'").replace('"','\"')).encode('ascii',
+            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n", "\\n")).encode('ascii',
                                                                                                         'ignore')
             recognised_text = " ".join([spell(word) for word in recognised_text.split(" ")])
             box_data = {"box":box,"text":recognised_text}
