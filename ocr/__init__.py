@@ -5,6 +5,7 @@ from PIL import Image
 import unicodedata
 import multiprocessing as mp
 import numpy as np
+from autocorrect import spell
 
 
 
@@ -263,6 +264,7 @@ def extract_text_process(Image_obj,box_texts,boxes):
             recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image), lang="eng", config="-psm 6")
             recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n", "\\n").replace("'","\'").replace('"','\"')).encode('ascii',
                                                                                                         'ignore')
+            recognised_text = " ".join([spell(word) for word in recognised_text.split(" ")])
             box_data = {"box":box,"text":recognised_text}
             box_texts.put(box_data)
 
