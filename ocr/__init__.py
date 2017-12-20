@@ -4,6 +4,7 @@ import pytesseract
 from PIL import Image
 import unicodedata
 import multiprocessing as mp
+import numpy as np
 
 
 
@@ -227,25 +228,54 @@ def get_text_from_bounding_boxes(image_path, boxes, console=False):
     return result
 
 
+
+def image_smoothening(img):
+    # ret1, th1 = cv2.threshold(img, 180, 255, cv2.THRESH_BINARY)
+    ret2, th2 = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    blur = cv2.GaussianBlur(th2, (3, 3), 0)
+    ret3, th3 = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return th3
+
+
+def remove_noise_and_smooth(file_name):
+    img = cv2.imread(file_name, 0)
+    filtered = cv2.adaptiveThreshold(img.astype(np.uint8), 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 15, 1)
+    kernel = np.ones((1, 1), np.uint8)
+    opening = cv2.morphologyEx(filtered, cv2.MORPH_OPEN, kernel)
+    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+    img = image_smoothening(img)
+    or_image = cv2.bitwise_or(img, closing)
+    return or_image
+
+
 def extract_text_process(Image_obj,box_texts,boxes):
-    # print "{} boxes to process".format(len(boxes))
-    for box in boxes:
-        if box!=[0,0,0,0]:
-            x,y,w,h = box
+    print "{} boxes to process".format(len(boxes))
+
+    bordersize = 20
+    for box in boxes[:5]:
+        if box != [0, 0, 0, 0]:
+            x, y, w, h = box
             cropped_image = Image_obj[y: y + h, x: x + w]
+            cropped_image = cv2.copyMakeBorder(cropped_image, top=bordersize, bottom=bordersize, left=bordersize,
+                                               right=bordersize,
+                                               borderType=cv2.BORDER_CONSTANT, value=[0, 0, 0])
             # print type(cropped_image)
-            recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng")
-            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
+            recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image), lang="eng", config="-psm 6")
+            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n", "\\n").replace("'","\'").replace('"','\"')).encode('ascii',
+                                                                                                        'ignore')
             box_data = {"box":box,"text":recognised_text}
             box_texts.put(box_data)
+
 
 
 def get_text_from_bounding_boxes_mp(image_path,boxes,console):
     box_texts = mp.Queue()
     image_obj = cv2.imread(image_path)
-    image_obj_gray = cv2.cvtColor(image_obj, cv2.COLOR_BGR2GRAY)
-
-    image_obj_bw = cv2.adaptiveThreshold(image_obj_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 115, 1)
+    smooth_image = remove_noise_and_smooth(image_path)
+    if console:
+        image_show(smooth_image, "Smoothed image")
+        draw_boxes(image_obj,boxes)
+    image_obj_bw = cv2.adaptiveThreshold(smooth_image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 1)
     num_cores = mp.cpu_count()
     print "Using {} cores".format(num_cores)
     new_boxes=[[] for core in range(num_cores)]
@@ -259,14 +289,59 @@ def get_text_from_bounding_boxes_mp(image_path,boxes,console):
     for p in processes:
         p.join()
 
-    recognised_boxes=[]
+
+
+    recognised_boxes = []
     while not box_texts.empty():
         recognised_boxes.append(box_texts.get())
+    print "Recognised boxes:",len(recognised_boxes)
 
-    # print "Recognised boxes:",len(recognised_boxes)
     result = {"image_path":image_path,"boxes":recognised_boxes,"image_size":(image_obj.shape[0],image_obj.shape[1])}
 
     return result
+
+
+#
+# def extract_text_process(Image_obj,box_texts,boxes):
+#     # print "{} boxes to process".format(len(boxes))
+#     for box in boxes:
+#         if box!=[0,0,0,0]:
+#             x,y,w,h = box
+#             cropped_image = Image_obj[y: y + h, x: x + w]
+#             # print type(cropped_image)
+#             recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng")
+#             recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
+#             box_data = {"box":box,"text":recognised_text}
+#             box_texts.put(box_data)
+#
+
+# def get_text_from_bounding_boxes_mp(image_path,boxes,console):
+#     box_texts = mp.Queue()
+#     image_obj = cv2.imread(image_path)
+#     image_obj_gray = cv2.cvtColor(image_obj, cv2.COLOR_BGR2GRAY)
+#
+#     image_obj_bw = cv2.adaptiveThreshold(image_obj_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 115, 1)
+#     num_cores = mp.cpu_count()
+#     print "Using {} cores".format(num_cores)
+#     new_boxes=[[] for core in range(num_cores)]
+#     for i,box in enumerate(boxes):
+#         new_boxes[i%num_cores].append(box)
+#
+#     processes = [mp.Process(target=extract_text_process, args=(image_obj_bw,box_texts,boxes_chunk)) for boxes_chunk in new_boxes]
+#     for p in processes:
+#         p.start()
+#
+#     for p in processes:
+#         p.join()
+#
+#     recognised_boxes=[]
+#     while not box_texts.empty():
+#         recognised_boxes.append(box_texts.get())
+#
+#     # print "Recognised boxes:",len(recognised_boxes)
+#     result = {"image_path":image_path,"boxes":recognised_boxes,"image_size":(image_obj.shape[0],image_obj.shape[1])}
+#
+#     return result
 
 
 def do_ocr(image_path,console):

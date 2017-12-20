@@ -5,27 +5,46 @@ import pytesseract
 import multiprocessing as mp
 from PIL import Image
 import unicodedata
+import numpy as np
 
 
 def extract_text_process(Image_obj,box_texts,boxes):
     print "{} boxes to process".format(len(boxes))
-    for box in boxes:
-        if box!=[0,0,0,0]:
-            x,y,w,h = box
+
+    bordersize = 20
+    for box in boxes[:5]:
+        if box != [0, 0, 0, 0]:
+            x, y, w, h = box
             cropped_image = Image_obj[y: y + h, x: x + w]
+            cropped_image = cv2.copyMakeBorder(cropped_image, top=bordersize, bottom=bordersize, left=bordersize,
+                                               right=bordersize,
+                                               borderType=cv2.BORDER_CONSTANT, value=[0, 0, 0])
             # print type(cropped_image)
-            recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng")
-            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
+            recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image), lang="eng", config="-psm 6")
+            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n", "\n")).encode('ascii',
+                                                                                                        'ignore')
             box_data = {"box":box,"text":recognised_text}
             box_texts.put(box_data)
+
+    # for box in boxes:
+    #     if box!=[0,0,0,0]:
+    #         x,y,w,h = box
+    #         cropped_image = Image_obj[y: y + h, x: x + w]
+    #         # print type(cropped_image)
+    #         recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng")
+    #         recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
+    #         box_data = {"box":box,"text":recognised_text}
+    #         box_texts.put(box_data)
+
 
 
 def get_text_from_bounding_boxes_mp(image_path,boxes,console):
     box_texts = mp.Queue()
     image_obj = cv2.imread(image_path)
-    image_obj_gray = cv2.cvtColor(image_obj, cv2.COLOR_BGR2GRAY)
-
-    image_obj_bw = cv2.adaptiveThreshold(image_obj_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 115, 1)
+    smooth_image = remove_noise_and_smooth(image_path)
+    image_show(smooth_image,"Smoothed image")
+    draw_boxes(image_obj,boxes)
+    image_obj_bw = cv2.adaptiveThreshold(smooth_image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 1)
     num_cores = mp.cpu_count()
     print "Using {} cores".format(num_cores)
     new_boxes=[[] for core in range(num_cores)]
@@ -61,22 +80,46 @@ def draw_boxes(image,boxes,color=(255,0,0)):
     image_show(image)
 
 
+def image_smoothening(img):
+    # ret1, th1 = cv2.threshold(img, 180, 255, cv2.THRESH_BINARY)
+    ret2, th2 = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    blur = cv2.GaussianBlur(th2, (3, 3), 0)
+    ret3, th3 = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return th3
+
+
+def remove_noise_and_smooth(file_name):
+    img = cv2.imread(file_name, 0)
+    filtered = cv2.adaptiveThreshold(img.astype(np.uint8), 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 15, 1)
+    kernel = np.ones((1, 1), np.uint8)
+    opening = cv2.morphologyEx(filtered, cv2.MORPH_OPEN, kernel)
+    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+    img = image_smoothening(img)
+    or_image = cv2.bitwise_or(img, closing)
+    return or_image
 
 def get_text_from_bounding_boxes(image_path, boxes, console=False):
     image_obj = cv2.imread(image_path)
-    image_obj_gray = cv2.cvtColor(image_obj, cv2.COLOR_BGR2GRAY)
-
-    image_obj_bw = cv2.adaptiveThreshold(image_obj_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 115, 1)
+    smooth_image = remove_noise_and_smooth(image_path)
+    image_show(smooth_image,"Smoothed image")
+    draw_boxes(image_obj,boxes)
+    image_obj_bw = cv2.adaptiveThreshold(smooth_image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 51, 1)
     result = {"image_path":image_path,"boxes":[]}
-    for box in boxes:
+    bordersize=20
+    for box in boxes[:5]:
         if box!=[0,0,0,0]:
             x,y,w,h = box
             cropped_image = image_obj_bw[y: y + h, x: x + w]
+            cropped_image = cv2.copyMakeBorder(cropped_image, top=bordersize, bottom=bordersize, left=bordersize, right=bordersize,
+                                        borderType=cv2.BORDER_CONSTANT, value=[0, 0, 0])
             # print type(cropped_image)
-            recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng")
-            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
-            box_data = {"box":box,"text":recognised_text}
-            result["boxes"].append(box_data)
+            recognised_text = pytesseract.image_to_string(Image.fromarray(cropped_image),lang="eng",config="-psm 6")
+            recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","\n")).encode('ascii','ignore')
+            print recognised_text
+            image_show(cropped_image)
+
+            # box_data = {"box":box,"text":recognised_text}
+            # result["boxes"].append(box_data)
             if console:
                 image_show(cropped_image)
     result["image_size"]=(image_obj.shape[0],image_obj.shape[1])
@@ -99,6 +142,9 @@ def get_boxes_faster(image_path,console=False):
         boxes.append(list(np_box))
 
     boxes.sort(key=lambda x: x[1])
+
+    if len(boxes)==0:
+        return []
 
     boxes_bins = []
     boxes_bin = []
@@ -146,10 +192,21 @@ def get_boxes_faster(image_path,console=False):
 if __name__ == '__main__':
     images_folder = "./tests/"
     images_list = os.listdir(images_folder)
+
+    # for image_path in ["qpl.jpg"]:
+    #     for f in range(1, 20, 5):
+    #         for o in range(10):
+    #             textclean(os.path.join(images_folder,image_path), f, o)
+    #             start_time = time.time()
+    #             boxes=get_boxes_faster("out.jpg",console=False)
+    #             if len(boxes)>0:
+    #                 result = get_text_from_bounding_boxes("out.jpg", boxes, console=False)
+    #                 print "Completed in: ",time.time()-start_time
+    #                 print result
     # for image_path in images_list[:1]:
-    for image_path in ["scanned_image.jpg"]:
+    for image_path in ["blog_screenshot.jpg","scanned_image.jpg","qpl2.jpg"]:
         start_time = time.time()
         boxes=get_boxes_faster(os.path.join(images_folder,image_path),console=False)
         result = get_text_from_bounding_boxes_mp(os.path.join(images_folder,image_path), boxes, console=False)
         print "Completed in: ",time.time()-start_time
-        # print result
+        print result
