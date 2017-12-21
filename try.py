@@ -6,6 +6,7 @@ import multiprocessing as mp
 from PIL import Image
 import unicodedata
 import numpy as np
+from matplotlib import pyplot as plt
 
 
 def extract_text_process(Image_obj,box_texts,boxes):
@@ -35,8 +36,6 @@ def extract_text_process(Image_obj,box_texts,boxes):
     #         recognised_text = unicodedata.normalize('NFKD', recognised_text.replace("\n","")).encode('ascii','ignore')
     #         box_data = {"box":box,"text":recognised_text}
     #         box_texts.put(box_data)
-
-
 
 def get_text_from_bounding_boxes_mp(image_path,boxes,console):
     box_texts = mp.Queue()
@@ -76,9 +75,9 @@ def image_show(image_object,image_name="Image"):
 
 def draw_boxes(image,boxes,color=(255,0,0)):
     for box in boxes:
-        cv2.rectangle(image,(box[0],box[1]),(box[0]+box[2],box[1]+box[3]),color,2)
+        cv2.rectangle(image,(box[0],box[1]),(box[0]+box[2],box[1]+box[3]),color,1)
     image_show(image)
-
+    cv2.imwrite("boxes.jpg",image)
 
 def image_smoothening(img):
     # ret1, th1 = cv2.threshold(img, 180, 255, cv2.THRESH_BINARY)
@@ -86,7 +85,6 @@ def image_smoothening(img):
     blur = cv2.GaussianBlur(th2, (3, 3), 0)
     ret3, th3 = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return th3
-
 
 def remove_noise_and_smooth(file_name):
     img = cv2.imread(file_name, 0)
@@ -188,25 +186,86 @@ def get_boxes_faster(image_path,console=False):
 
     return new_boxes
 
+def box_analysis(boxes):
+    all_x = sorted([x[0] for x in boxes])
+    all_y = sorted([x[1] for x in boxes])
+    all_h = sorted([x[3] for x in boxes])
+    # plt.plot(all_x)
+    # plt.ylabel("X-coordinates")
+    # plt.show()
+    # plt.plot(all_y)
+    # plt.ylabel("Y-coordinates")
+    # plt.show()
+    #
+    # delta_y = []
+    # for i in range(len(all_y)-1):
+    #     delta_y.append(all_y[i+1]-all_y[i])
+    # plt.plot(delta_y)
+    # plt.ylabel("delta Y   "+str(sum(delta_y)/len(delta_y)))
+    # plt.show()
+    # plt.plot(sorted(delta_y))
+    # plt.ylabel("delta Y   " + str(sum(delta_y) / len(delta_y)))
+    # plt.show()
+
+def fill_boxes(image_obj,boxes,color=(0,0)):
+    polygons=[]
+    percent_of_size = 0.2
+    for box in boxes:
+        x = box[0]
+        y = box[1]
+        w = box[2]
+        h = box[3]
+        dx = int(percent_of_size * w)
+        dy = int(percent_of_size * h)
+        cv2.rectangle(image_obj,(x-dx,y),(x+w+dx,y+h),(0,0,0),cv2.FILLED)
+        # polygon = [[x-dx,y-dy],[x+w+dx,y-dy],[x+w+dx,y+h+dy],[x-dx,y+h+dy]]
+        # polygons.append(polygon)
+
+    # for polygon in polygons:
+    #     cv2.rectangle(image_obj,tuple(polygon[0]),tuple(polygon[2]),(0,0,0),cv2.FILLED)
+    # polygons = np.array(polygons)
+    # return cv2.fillPoly(image_obj,polygons,color)
+    return image_obj
+
+def get_better_boxes(image_path,console=False):
+    min_contour_size = 50
+    image_obj = cv2.imread(image_path)
+    image_show(image_obj,"Original image")
+    smoothed_image = remove_noise_and_smooth(image_path)
+    print smoothed_image.shape
+    image_show(smoothed_image,"Smoothed image")
+    start_time = time.time()
+    mser = cv2.MSER_create(_min_area=10, _max_area=1000)
+
+    regions, np_boxes = mser.detectRegions(smoothed_image)
+    boxes = []
+    for np_box in np_boxes:
+        boxes.append(list(np_box))
+
+    filled_smooth_image = cv2.cvtColor(fill_boxes(image_obj.copy(),boxes),cv2.COLOR_BGR2GRAY)
+    im2, contours, hierarchy = cv2.findContours(filled_smooth_image.copy(), cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    cv2.drawContours(image_obj.copy(),contours,-1,(0,255,0),2)
+    print "Found {} countours".format(len(contours))
+    contour_areas = [c for c in contours if cv2.contourArea(c) > min_contour_size]
+    print "Filtered to {} contours".format(len(contour_areas))
+    contour_boxes=[]
+    for contour in contour_areas:
+        contour_boxes.append(cv2.boundingRect(contour))
+
+
+    image_show(image_obj)
+
+    draw_boxes(image_obj.copy(),contour_boxes)
+    box_analysis(boxes)
+    return contour_boxes
 
 if __name__ == '__main__':
     images_folder = "./tests/"
     images_list = os.listdir(images_folder)
 
-    # for image_path in ["qpl.jpg"]:
-    #     for f in range(1, 20, 5):
-    #         for o in range(10):
-    #             textclean(os.path.join(images_folder,image_path), f, o)
-    #             start_time = time.time()
-    #             boxes=get_boxes_faster("out.jpg",console=False)
-    #             if len(boxes)>0:
-    #                 result = get_text_from_bounding_boxes("out.jpg", boxes, console=False)
-    #                 print "Completed in: ",time.time()-start_time
-    #                 print result
-    # for image_path in images_list[:1]:
-    for image_path in ["blog_screenshot.jpg","scanned_image.jpg","qpl2.jpg"]:
+    for image_path in ["agreement.jpg","qpl5.jpg","qpl.jpg","blog_screenshot.jpg","scanned_image.jpg","qpl2.jpg","qpl3.jpg","qpl4.jpg"]:
         start_time = time.time()
-        boxes=get_boxes_faster(os.path.join(images_folder,image_path),console=False)
-        result = get_text_from_bounding_boxes_mp(os.path.join(images_folder,image_path), boxes, console=False)
-        print "Completed in: ",time.time()-start_time
-        print result
+        boxes=get_better_boxes(os.path.join(images_folder,image_path),console=True)
+        # result = get_text_from_bounding_boxes_mp(os.path.join(images_folder,image_path), boxes, console=False)
+        # print "Completed in: ",time.time()-start_time
+        # print result
