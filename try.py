@@ -263,7 +263,7 @@ if __name__ == '__main__':
     images_folder = "./tests/"
     images_list = os.listdir(images_folder)
 
-    for image_path in ["agreement.jpg","qpl5.jpg","qpl.jpg","blog_screenshot.jpg","scanned_image.jpg","qpl2.jpg","qpl3.jpg","qpl4.jpg"]:
+    for image_path in ["agreement.jpg","qpl5.png","qpl.jpg","blog_screenshot.jpg","scanned_image.jpg","qpl2.jpg","qpl3.jpg","qpl4.jpg"]:
         start_time = time.time()
         boxes=get_better_boxes(os.path.join(images_folder,image_path),console=True)
         # result = get_text_from_bounding_boxes_mp(os.path.join(images_folder,image_path), boxes, console=False)
